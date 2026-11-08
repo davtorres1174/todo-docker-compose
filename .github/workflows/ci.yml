@@ -1,0 +1,59 @@
+name: CI - Docker
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-y-prueba:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Crear .env a partir de .env.example (solo para CI)
+        run: |
+          sed "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci_${{ github.run_id }}/" .env.example > .env
+
+      - name: Construir imagen de la aplicacion (docker build)
+        run: docker build -t todo-app:ci ./app
+
+      - name: Construir imagen de la base de datos (docker build)
+        run: docker build -t todo-db:ci ./db
+
+      - name: Validar docker-compose.yml
+        run: docker compose config --quiet
+
+      - name: Levantar los servicios (docker compose up)
+        run: docker compose up -d --build --wait --wait-timeout 120
+
+      - name: Estado de los contenedores
+        run: docker compose ps
+
+      - name: Prueba de comunicacion app -> db (ida y vuelta)
+        run: |
+          set -e
+          echo "1) Health: la app llega a la base de datos por el nombre 'db'"
+          curl -fsS http://localhost:5000/health
+
+          echo; echo "2) Guardar una tarea (POST)"
+          curl -fsS -X POST http://localhost:5000/api/tareas \
+               -H "Content-Type: application/json" \
+               -d '{"titulo":"Tarea creada desde GitHub Actions"}'
+
+          echo; echo "3) Leer las tareas (GET) y verificar que la nueva esta"
+          curl -fsS http://localhost:5000/api/tareas | tee /tmp/tareas.json
+          grep -q "Tarea creada desde GitHub Actions" /tmp/tareas.json
+
+          echo; echo "4) Resolucion DNS del servicio 'db' desde el contenedor app"
+          docker compose exec -T app python -c "import socket; print('db ->', socket.gethostbyname('db'))"
+
+      - name: Logs si algo falla
+        if: failure()
+        run: docker compose logs
+
+      - name: Apagar los servicios
+        if: always()
+        run: docker compose down -v
