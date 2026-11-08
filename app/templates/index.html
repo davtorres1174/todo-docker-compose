@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lista de Tareas - Docker</title>
+  <style>
+    :root { --bg:#f4f6fb; --card:#fff; --text:#1f2937; --muted:#6b7280; --accent:#2563eb; --ok:#16a34a; --danger:#dc2626; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+    main { max-width: 560px; margin: 40px auto; padding: 0 16px; }
+    h1 { margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+    .sub code { background:#e5e7eb; padding:2px 6px; border-radius:4px; }
+    form { display:flex; gap:8px; margin-bottom: 16px; }
+    form input { flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; }
+    button { padding:10px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-size:15px; cursor:pointer; }
+    ul { list-style:none; padding:0; margin:0; }
+    li { display:flex; align-items:center; gap:10px; background:var(--card); padding:12px; border-radius:8px; margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+    li span { flex:1; }
+    li.hecha span { text-decoration: line-through; color: var(--muted); }
+    li button.borrar { background: transparent; color: var(--danger); padding: 4px 8px; }
+    .estado { font-size: 13px; color: var(--muted); margin-top: 16px; }
+    .estado.ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Lista de Tareas</h1>
+  <p class="sub">Contenedor <code>app</code> (Flask) &rarr; contenedor <code>{{ db_host }}</code> (PostgreSQL) por nombre de servicio</p>
+
+  <form id="form">
+    <input id="titulo" placeholder="Nueva tarea..." autocomplete="off" required>
+    <button type="submit">Agregar</button>
+  </form>
+
+  <ul id="lista"></ul>
+  <p id="estado" class="estado">Conectando...</p>
+</main>
+
+<script>
+  const lista = document.getElementById("lista");
+  const estado = document.getElementById("estado");
+
+  async function cargar() {
+    try {
+      const r = await fetch("/api/tareas");
+      const tareas = await r.json();
+      lista.innerHTML = "";
+      tareas.forEach(t => {
+        const li = document.createElement("li");
+        if (t.completada) li.classList.add("hecha");
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = t.completada;
+        check.onchange = async () => { await fetch(`/api/tareas/${t.id}`, { method: "PATCH" }); cargar(); };
+        const span = document.createElement("span");
+        span.textContent = t.titulo;
+        const borrar = document.createElement("button");
+        borrar.className = "borrar";
+        borrar.textContent = "Eliminar";
+        borrar.onclick = async () => { await fetch(`/api/tareas/${t.id}`, { method: "DELETE" }); cargar(); };
+        li.append(check, span, borrar);
+        lista.appendChild(li);
+      });
+      estado.textContent = `${tareas.length} tarea(s) leidas desde PostgreSQL`;
+      estado.className = "estado ok";
+    } catch (e) {
+      estado.textContent = "Error al conectar con la API";
+      estado.className = "estado";
+    }
+  }
+
+  document.getElementById("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("titulo");
+    await fetch("/api/tareas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titulo: input.value })
+    });
+    input.value = "";
+    cargar();
+  };
+
+  cargar();
+</script>
+</body>
+</html>
