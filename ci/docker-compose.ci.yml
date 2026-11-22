@@ -1,0 +1,20 @@
+# Ajustes para correr el compose dentro de Jenkins sin chocar con el ambiente
+# de desarrollo (mismos servicios, pero otros nombres y sin puertos publicados).
+# Se usa junto al archivo principal:
+#   docker compose -f docker-compose.yml -f ci/docker-compose.ci.yml up -d
+services:
+  app:
+    image: todo-app:${IMAGE_TAG:-ci}   # imagen construida en la etapa Build
+    container_name: todo-app-ci
+    ports: !reset []                   # la prueba corre dentro de la red; no se publica nada
+  db:
+    image: todo-db:${IMAGE_TAG:-ci}
+    container_name: todo-db-ci
+
+networks:
+  red_todo:
+    name: red_todo_ci
+
+volumes:
+  datos_postgres:
+    name: datos_postgres_ci
