@@ -1,0 +1,20 @@
+# Control de versiones
+git
+github
+
+# Pipeline como codigo (Jenkinsfile) y sus vistas
+workflow-aggregator
+pipeline-stage-view
+pipeline-graph-view
+
+# Ejecutar etapas dentro de contenedores Docker (agent { docker { ... } })
+docker-workflow
+
+# Credenciales y utilidades del pipeline
+credentials-binding
+timestamper
+junit
+
+# Configuracion como codigo
+configuration-as-code
+job-dsl

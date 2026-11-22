@@ -1,0 +1,65 @@
+# Jenkins Configuration as Code (JCasC)
+# Los valores ${...} se leen de variables de entorno definidas en jenkins/.env
+# (ese archivo NO se sube al repositorio). Aqui no hay ningun secreto.
+
+jenkins:
+  systemMessage: "Jenkins - Proyecto To-Do (Flask + PostgreSQL) - Integracion Continua"
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          name: "Administrador"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "http://localhost:8080/"
+
+# Credenciales guardadas (cifradas) dentro de Jenkins
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "postgres-password"
+              description: "Contrasena de PostgreSQL para las pruebas de integracion"
+              secret: "${POSTGRES_CI_PASSWORD}"
+
+# Job de tipo Pipeline: toma el Jenkinsfile del repositorio de GitHub
+jobs:
+  - script: |
+      pipelineJob('todo-docker-compose') {
+        displayName('todo-docker-compose')
+        description('CI del proyecto To-Do: pruebas unitarias, build de las imagenes app y db, y prueba de comunicacion entre contenedores. Definido en el Jenkinsfile del repositorio.')
+        properties {
+          githubProjectUrl('https://github.com/davtorres1174/todo-docker-compose/')
+          pipelineTriggers {
+            triggers {
+              pollSCM {
+                scmpoll_spec('H/2 * * * *')
+              }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/davtorres1174/todo-docker-compose.git')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }
