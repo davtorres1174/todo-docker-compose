@@ -13,3 +13,5 @@ Dockerfile
 .pytest_cache/
 .vscode/
 .idea/
+tests/
+requirements-dev.txt
