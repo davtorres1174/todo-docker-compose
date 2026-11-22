@@ -77,7 +77,7 @@ def listar_tareas():
 def crear_tarea():
     datos = request.get_json(silent=True) or {}
     titulo = (datos.get("titulo") or "").strip()
-    if not titulo:
+    if titulo is None:  # ERROR a proposito: deja pasar titulos vacios
         return jsonify(error="El campo 'titulo' es obligatorio"), 400
     with get_conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
