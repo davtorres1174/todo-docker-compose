@@ -1,7 +1,7 @@
 # Lista de Tareas con Docker: dos contenedores comunicados
 
-Proyecto de **Integración Continua (Entrega 1, Escenario 3)**.
-Una aplicación web de tareas (To-Do) en **Python/Flask** guarda y lee sus datos de **PostgreSQL**. Cada uno corre en su propio contenedor y los dos se comunican dentro de una red de Docker usando el **nombre del servicio** (`db`).
+Proyecto de **Integración Continua** (Entrega 1: Docker · Entrega 2: Jenkins).
+Una aplicación web de tareas (To-Do) en **Python/Flask** guarda y lee sus datos de **PostgreSQL**. Cada uno corre en su propio contenedor y los dos se comunican dentro de una red de Docker usando el **nombre del servicio** (`db`). Un servidor **Jenkins**, también en Docker, prueba y construye el proyecto automáticamente con cada push (ver [Integración continua con Jenkins](#integración-continua-con-jenkins)).
 
 ## Arquitectura
 
@@ -36,11 +36,23 @@ Una aplicación web de tareas (To-Do) en **Python/Flask** guarda y lee sus datos
 │   ├── .dockerignore
 │   ├── app.py              # API Flask (se conecta a DB_HOST=db)
 │   ├── requirements.txt
+│   ├── requirements-dev.txt  # pytest (solo para pruebas)
+│   ├── tests/test_app.py     # pruebas unitarias
 │   └── templates/index.html
 ├── db/                     # Contenedor 2: base de datos
 │   ├── Dockerfile
 │   ├── .dockerignore
 │   └── init.sql            # crea la tabla "tareas"
+├── jenkins/                # Servidor Jenkins (Entrega 2)
+│   ├── Dockerfile          # jenkins/jenkins:2.580.2-lts-jdk21 + cliente Docker
+│   ├── plugins.txt         # plugins instalados
+│   ├── jenkins.yaml        # Configuration as Code: usuario, credencial y job
+│   ├── docker-compose.yml
+│   └── .env.example
+├── ci/
+│   ├── docker-compose.ci.yml   # ajustes del compose para correr dentro de Jenkins
+│   └── prueba_comunicacion.py  # prueba de integración app -> db
+├── Jenkinsfile             # pipeline de Jenkins (pipeline como código)
 ├── .github/workflows/ci.yml  # pipeline de GitHub Actions
 ├── docker-compose.yml
 ├── .env.example            # plantilla de variables (el .env real NO se sube)
@@ -143,7 +155,55 @@ docker compose exec db psql -U tareas_user -d tareas_db -c "SELECT * FROM tareas
 - `healthcheck` en la base de datos y `depends_on: condition: service_healthy` en la app.
 - Servidor de producción **gunicorn** en lugar del servidor de desarrollo de Flask.
 
-## Integración continua
+## Integración continua con Jenkins
+
+Jenkins corre en su propio contenedor (`jenkins/jenkins:2.580.2-lts-jdk21`) y queda configurado como código con **JCasC**: usuario administrador, credencial de la base de datos y el job `todo-docker-compose`. No aparece el asistente de instalación.
+
+### Levantar Jenkins
+
+```bash
+cd jenkins
+cp .env.example .env        # en PowerShell: copy .env.example .env  -> cambiar las claves
+docker compose up -d --build
+docker logs -f jenkins-todo # esperar "Jenkins is fully up and running"
+```
+
+Abrir **http://localhost:8080** e ingresar con el usuario y la clave de `jenkins/.env`.
+
+| Elemento | Valor |
+|----------|-------|
+| Puerto | `8080` (interfaz web) |
+| Volumen | `jenkins_home_todo` (jobs, historial, credenciales cifradas) |
+| Acceso a Docker | socket `/var/run/docker.sock` del anfitrión (solo laboratorio local) |
+| Plugins | Git, GitHub, Pipeline, Docker Pipeline, Credentials Binding, JUnit, Stage View, Graph View, JCasC, Job DSL |
+| Credencial | `postgres-password` (Secret text), leída en el pipeline con `withCredentials` |
+| Disparo | Poll SCM `H/2 * * * *`: Jenkins revisa GitHub cada ~2 min y ejecuta el pipeline si hay commits nuevos |
+
+### Pipeline (`Jenkinsfile`)
+
+```
+Checkout ──▶ Pruebas unitarias ──▶ Build ──▶ Test de integración ──▶ post (limpieza)
+             (pytest en un         (docker    (compose up + prueba
+              contenedor python     build app  app -> db por nombre
+              efímero)              y db)      de servicio)
+```
+
+1. **Checkout:** descarga el código desde GitHub.
+2. **Pruebas unitarias:** `pytest` dentro de un contenedor `python:3.12.7-slim` efímero; el reporte JUnit se publica en Jenkins.
+3. **Build:** construye las imágenes `todo-app` y `todo-db` de la Entrega 1.
+4. **Test de integración:** levanta el compose con `ci/docker-compose.ci.yml` (otros nombres de contenedor, red y volumen, y sin puertos publicados, para no chocar con el ambiente de desarrollo) y ejecuta `ci/prueba_comunicacion.py` dentro del contenedor `app`: verifica que `db` se resuelve por DNS interno, que `/health` responde con `db_host = db` y hace un POST + GET real.
+5. **post:** siempre apaga los contenedores, borra el volumen y las imágenes de prueba. Si cualquier etapa falla, el build queda en rojo y las etapas siguientes no se ejecutan.
+
+### Correr las pruebas unitarias localmente
+
+```bash
+cd app
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-dev.txt   # Linux/macOS: .venv/bin/pip
+.venv/Scripts/python -m pytest -v
+```
+
+## Integración continua con GitHub Actions
 
 `.github/workflows/ci.yml` se ejecuta en cada **push** y **pull request**:
 
